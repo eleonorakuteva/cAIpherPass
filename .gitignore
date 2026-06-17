@@ -1,3 +1,10 @@
+# cAIpherPass — local secrets / vault (never commit these)
+data/
+*.db
+
+# Claude Code local machine settings (personal, not shared)
+.claude/settings.local.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
