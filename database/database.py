@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from schemas import VaultEntry
+from database.schemas import VaultEntry
 
 
 # Database file location
@@ -67,6 +67,59 @@ def get_salt():
 
     conn.close()
     return salt
+
+
+def has_verification_hash():
+    """Check if a master password verification hash exists (first-time setup vs login)."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT value FROM metadata WHERE key = 'verification_hash'")
+    result = cursor.fetchone()
+    conn.close()
+
+    return result is not None
+
+
+def save_verification_hash(verification_salt, verification_hash):
+    """Store the verification salt and hash on first-time setup."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+        ("verification_salt", verification_salt)
+    )
+    cursor.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+        ("verification_hash", verification_hash)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_verification_credentials():
+    """Retrieve the verification salt and hash for login verification.
+
+    Returns:
+        A tuple (verification_salt, verification_hash) or (None, None) if not found
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT value FROM metadata WHERE key = 'verification_salt'")
+    salt_result = cursor.fetchone()
+
+    cursor.execute("SELECT value FROM metadata WHERE key = 'verification_hash'")
+    hash_result = cursor.fetchone()
+
+    conn.close()
+
+    verification_salt = salt_result[0] if salt_result else None
+    verification_hash = hash_result[0] if hash_result else None
+
+    return verification_salt, verification_hash
 
 
 def create_entry(service_name, username, encrypted_password, tags=None):

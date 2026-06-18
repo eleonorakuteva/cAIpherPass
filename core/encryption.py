@@ -1,6 +1,7 @@
 """Encryption layer: derive a Fernet key from a master password using PBKDF2."""
 
 import base64
+import secrets
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -39,3 +40,23 @@ def decrypt_password(token, key):
     """Decrypt an encrypted password (token) with the derived key. Returns text."""
     fernet = Fernet(key)
     return fernet.decrypt(token).decode()
+
+
+def create_password_hash(master_password):
+    """Create a verification hash + salt on first setup.
+
+    Returns (salt, hash) as bytes. Save both to the database.
+    The hash is the "fingerprint" of the password — you can't reverse it.
+    """
+    verification_salt = secrets.token_bytes(32)
+    verification_hash = derive_key(master_password, verification_salt)
+    return verification_salt, verification_hash
+
+
+def verify_password(master_password, stored_salt, stored_hash):
+    """Check if the entered password matches the stored hash.
+
+    Returns True if correct, False if wrong.
+    """
+    test_hash = derive_key(master_password, stored_salt)
+    return test_hash == stored_hash
