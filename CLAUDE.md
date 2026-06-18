@@ -58,25 +58,6 @@ AI phases) lives in the "Design / app logic" section below.
 
 Work top-down; don't jump ahead unless the user asks.
 
-## Planned folder structure (not scaffolded yet)
-
-```
-cAIpherPass/
-  main.py            app entry point
-  gui/app.py         main window
-  gui/components.py  reusable widgets
-  core/generator.py  password generation
-  core/encryption.py Fernet key + encrypt/decrypt
-  core/database.py   SQLite CRUD
-  ai/strength.py     rule-based scorer (Phase 1)
-  ai/model.py        sklearn classifier (Phase 2)
-  ai/train.py        training script
-  data/vault.db      encrypted DB (runtime-generated)
-  requirements.txt
-```
-
-We build these files as we reach each step — no empty scaffolding up front.
-
 ## Design / app logic (the *why*)
 
 The reasoning behind each piece of the stack, plus the details we'll need when we
@@ -140,4 +121,11 @@ Windows.
 ## Status
 
 - [x] Project introduced, plan reviewed, CLAUDE.md created.
-- [ ] Step 1: password generator — not started.
+- [x] Step 1: Password generator (`core/generator.py`) — complete.
+- [x] Step 2: Encryption layer (`core/encryption.py`) — complete.
+- [x] Step 3: Database layer (`database/database.py`, `database/schemas.py`) — complete.
+  - SQLite schema with vault + metadata tables
+  - Salt management (generated on first launch, retrieved on login)
+  - CRUD operations with full input validation
+  - Data integrity guaranteed (bad data rejected before SQL)
+- [ ] Step 4: GUI (CustomTkinter) — next.
