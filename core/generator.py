@@ -52,3 +52,43 @@ def generate_password(length=16, use_uppercase=True, use_digits=True, use_symbol
 
     # Join the list of characters into the final password string.
     return "".join(password_chars)
+
+
+def _secure_shuffle(items):
+    """Shuffle a list in place using `secrets` (secure Fisher-Yates)."""
+    for i in range(len(items) - 1, 0, -1):
+        j = secrets.randbelow(i + 1)
+        items[i], items[j] = items[j], items[i]
+
+
+def generate_password_with_counts(lowercase=0, uppercase=0, digits=0, symbols=0):
+    """Generate a password with an exact count of each character type.
+
+    Unlike `generate_password` (total length + on/off types), this builds the
+    password from explicit per-type counts. The final length is the sum of all
+    counts. Each count says how many characters of that type to include.
+    """
+    # Pair each character pool with how many characters we want from it.
+    pool_counts = [
+        (LOWERCASE, lowercase),
+        (UPPERCASE, uppercase),
+        (DIGITS, digits),
+        (SYMBOLS, symbols),
+    ]
+
+    # Validate: counts can't be negative, and we need at least one character.
+    if any(count < 0 for _, count in pool_counts):
+        raise ValueError("character counts cannot be negative.")
+    if sum(count for _, count in pool_counts) == 0:
+        raise ValueError("select at least one character.")
+
+    # Take exactly `count` characters from each requested pool.
+    password_chars = []
+    for pool, count in pool_counts:
+        for _ in range(count):
+            password_chars.append(secrets.choice(pool))
+
+    # Shuffle so the types aren't grouped together (all lowercase first, etc.).
+    _secure_shuffle(password_chars)
+
+    return "".join(password_chars)
