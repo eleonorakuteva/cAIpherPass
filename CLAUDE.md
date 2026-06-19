@@ -128,4 +128,12 @@ Windows.
   - Salt management (generated on first launch, retrieved on login)
   - CRUD operations with full input validation
   - Data integrity guaranteed (bad data rejected before SQL)
-- [ ] Step 4: GUI (CustomTkinter) — next.
+- [x] Step 4: GUI (CustomTkinter) — complete.
+  - Login/setup screen (`gui/app.py` → `LoginApp`): first-launch master-password
+    setup with confirm + 8-char minimum; verify on later launches.
+  - Main vault (`MainApp`) with two tabs:
+    - Add New Entry — entry form (service, username, password, tags) + password
+      generator card (per-type count sliders, live total length), Generate / Copy / Save.
+    - Vault — searchable table (live debounced search, decrypt-once cache),
+      reveal / copy / delete per row.
+- [ ] Step 5: Rule-based strength scorer (Phase 1 AI) — next.
