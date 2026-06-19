@@ -3,6 +3,7 @@
 import sqlite3
 import sys
 from pathlib import Path
+from tkinter import messagebox
 
 import customtkinter as ctk
 
@@ -226,40 +227,48 @@ class MainApp:
         tabview.pack(fill="both", expand=True, padx=20, pady=20)
 
         # Add the two tabs (search now lives inside the Vault tab).
-        tabview.add("Generate Password")
+        tabview.add("Add New Entry")
         tabview.add("Vault")
 
-        self._setup_generate_tab(tabview.tab("Generate Password"))
+        self._setup_generate_tab(tabview.tab("Add New Entry"))
         self._setup_view_tab(tabview.tab("Vault"))
 
     def _setup_generate_tab(self, tab):
-        """Build the Generate Password tab.
+        """Build the Add New Entry tab.
 
-        Layout is two columns:
-          - LEFT: the generated password (normal single-line field) + copy button.
-          - RIGHT: one slider per character type (each picks HOW MANY of that type),
-            a derived total-length readout, and the Generate button beneath them.
+        Layout is a 60/40 two-column grid:
+          - LEFT (~60%): the new-entry form (service, username, password, tags) +
+            Save. This is the primary task, so it gets the width.
+          - RIGHT (~40%): the password generator as a self-contained card —
+            per-type length sliders + a derived total. It only fills the Password
+            field on the left, so it's framed to read as a subordinate tool.
         """
         # Create container for better layout
         container = ctk.CTkFrame(tab, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Title
-        title = ctk.CTkLabel(
+        # Subtitle — the tab already labels this view, so instead of repeating
+        # "Add New Entry" we show a muted helper line (same title+subtitle pattern
+        # as the login screen) that tells the user what to do here.
+        subtitle = ctk.CTkLabel(
             container,
-            text="Generate Password",
-            font=("Helvetica", 18, "bold"),
-            text_color="#ffffff"
+            text="Generate a password or enter your own, then save it to your vault.",
+            font=("Helvetica", 13),
+            text_color="#cccccc"
         )
-        title.pack(pady=(0, 20), anchor="center")
+        subtitle.pack(pady=(0, 20), anchor="center")
 
-        # Two-column grid layout
+        # Two-column 60/40 grid: the form (primary) gets more width than the
+        # generator (a helper tool). Column weights 3:2 ≈ 60/40.
         grid_frame = ctk.CTkFrame(container, fg_color="transparent")
         grid_frame.pack(fill="both", expand=True, pady=10)
+        grid_frame.grid_columnconfigure(0, weight=3)  # LEFT: form (~60%)
+        grid_frame.grid_columnconfigure(1, weight=2)  # RIGHT: generator (~40%)
 
-        # LEFT COLUMN: new-entry form (service, username, password, tags) + save
+        # LEFT COLUMN: new-entry form (service, username, password, tags) + save.
+        # sticky="new" keeps it top-aligned and stretched to its column width.
         left_frame = ctk.CTkFrame(grid_frame, fg_color="transparent")
-        left_frame.pack(side="left", fill="x", expand=True, padx=(0, 15), anchor="n")
+        left_frame.grid(row=0, column=0, sticky="new", padx=(0, 15))
 
         # Service name
         service_label = ctk.CTkLabel(
@@ -304,6 +313,21 @@ class MainApp:
         )
         self.password_display.pack(side="left", fill="x", expand=True)
 
+        # Generate comes first (you generate, then copy). Blue marks it as the
+        # secondary action; the settings that drive it live in the right column.
+        self.generate_button = ctk.CTkButton(
+            password_row,
+            text="Generate",
+            command=self._generate_password,
+            font=("Helvetica", 12),
+            width=100,
+            height=45,
+            fg_color="#2196F3",
+            hover_color="#0b7dda"
+        )
+        self.generate_button.pack(side="left", padx=(8, 0))
+
+        # Copy is a neutral grey utility button (matches the icon buttons in Vault).
         self.copy_button = ctk.CTkButton(
             password_row,
             text="Copy",
@@ -311,8 +335,8 @@ class MainApp:
             font=("Helvetica", 12),
             width=70,
             height=45,
-            fg_color="#2196F3",
-            hover_color="#0b7dda"
+            fg_color="#555555",
+            hover_color="#666666"
         )
         self.copy_button.pack(side="left", padx=(8, 0))
 
@@ -347,12 +371,33 @@ class MainApp:
         )
         self.save_status.pack(anchor="w")
 
-        # RIGHT COLUMN: per-type length sliders + total + generate button
-        right_frame = ctk.CTkFrame(grid_frame, fg_color="transparent")
-        right_frame.pack(side="left", fill="both", expand=True, padx=(15, 0))
+        # RIGHT COLUMN: the password generator as a self-contained card. It only
+        # feeds the Password field on the left, so framing it (tint + border)
+        # makes it read as a subordinate tool rather than a second form.
+        card = ctk.CTkFrame(
+            grid_frame,
+            fg_color="#2b2b2b",
+            corner_radius=10,
+            border_width=1,
+            border_color="#3a3a3a",
+        )
+        card.grid(row=0, column=1, sticky="new", padx=(15, 0))
+
+        # Inner body carries the padding so content doesn't touch the card edges.
+        card_body = ctk.CTkFrame(card, fg_color="transparent")
+        card_body.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # Card title — names the tool so it's clearly "the generator", not a form.
+        card_title = ctk.CTkLabel(
+            card_body,
+            text="Password generator",
+            font=("Helvetica", 14, "bold"),
+            text_color="#ffffff",
+        )
+        card_title.pack(anchor="w", pady=(0, 12))
 
         options_label = ctk.CTkLabel(
-            right_frame,
+            card_body,
             text="Characters per type:",
             font=("Helvetica", 12),
             text_color="#cccccc"
@@ -362,31 +407,19 @@ class MainApp:
         # Build one count slider per character type. Each returns its slider so
         # we can read the value later. Defaults sum to 16 (8+4+2+2).
         # Lowercase has a minimum of 1 so the total length is never zero.
-        self.lowercase_slider = self._make_count_slider(right_frame, "Lowercase (a-z)", 8, minimum=1)
-        self.uppercase_slider = self._make_count_slider(right_frame, "Uppercase (A-Z)", 4)
-        self.digits_slider = self._make_count_slider(right_frame, "Digits (0-9)", 2)
-        self.symbols_slider = self._make_count_slider(right_frame, "Symbols (!@#$%^&*)", 2)
+        self.lowercase_slider = self._make_count_slider(card_body, "Lowercase (a-z)", 8, minimum=1)
+        self.uppercase_slider = self._make_count_slider(card_body, "Uppercase (A-Z)", 4)
+        self.digits_slider = self._make_count_slider(card_body, "Digits (0-9)", 2)
+        self.symbols_slider = self._make_count_slider(card_body, "Symbols (!@#$%^&*)", 2)
 
         # Derived total length (sum of the four sliders), updated live.
         self.total_label = ctk.CTkLabel(
-            right_frame,
+            card_body,
             text="Total length: 16",
             font=("Helvetica", 12, "bold"),
             text_color="#4CAF50"
         )
-        self.total_label.pack(anchor="w", pady=(10, 10))
-
-        # Generate button — lives in the right column, below the sliders.
-        self.generate_button = ctk.CTkButton(
-            right_frame,
-            text="Generate Password",
-            command=self._generate_password,
-            font=("Helvetica", 14, "bold"),
-            height=40,
-            fg_color="#4CAF50",
-            hover_color="#45a049"
-        )
-        self.generate_button.pack(fill="x", pady=(5, 0))
+        self.total_label.pack(anchor="w", pady=(10, 0))
 
         # Show the initial total now that all sliders exist.
         self._update_total_label()
@@ -634,7 +667,9 @@ class MainApp:
                 actions, text="🗑", width=40, height=34, font=("Helvetica", 15),
                 fg_color="#c0392b", hover_color="#a93226"
             )
-            del_btn.configure(command=lambda eid=entry["id"]: self._delete_entry(eid))
+            del_btn.configure(
+                command=lambda eid=entry["id"], name=entry["service_name"]: self._delete_entry(eid, name)
+            )
             del_btn.pack(side="left", padx=(6, 0))
 
     def _toggle_reveal(self, pw_field, show_btn, show_label="Show", hide_label="Hide"):
@@ -660,8 +695,24 @@ class MainApp:
         button.configure(text="✓")
         self.root.after(1500, lambda: button.configure(text=original))
 
-    def _delete_entry(self, entry_id):
-        """Delete an entry from the vault, then refresh the table."""
+    def _delete_entry(self, entry_id, service_name=""):
+        """Confirm first, then delete the entry from the vault and refresh.
+
+        Deleting is irreversible — the encrypted row is gone for good — so we
+        guard it behind a yes/no dialog that names the service being removed.
+        `messagebox.askyesno` is modal: it blocks until the user answers and
+        returns True only for "Yes".
+        """
+        label = f"'{service_name}'" if service_name else "this entry"
+        confirmed = messagebox.askyesno(
+            title="Delete entry",
+            message=f"Delete {label} from your vault?\n\nThis cannot be undone.",
+            icon="warning",
+            parent=self.root,
+        )
+        if not confirmed:
+            return
+
         delete_entry(entry_id)
         # Re-render so the deleted row disappears, keeping any active search.
         self._load_entries()
