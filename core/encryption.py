@@ -1,6 +1,7 @@
 """Encryption layer: derive a Fernet key from a master password using PBKDF2."""
 
 import base64
+import hmac
 import secrets
 
 from cryptography.fernet import Fernet
@@ -59,4 +60,7 @@ def verify_password(master_password, stored_salt, stored_hash):
     Returns True if correct, False if wrong.
     """
     test_hash = derive_key(master_password, stored_salt)
-    return test_hash == stored_hash
+    # Constant-time comparison: always checks every byte (no early exit on the
+    # first mismatch), so the time taken can't leak how many leading bytes were
+    # correct. Prevents a timing side-channel; use this, never `==`, for secrets.
+    return hmac.compare_digest(test_hash, stored_hash)
