@@ -136,4 +136,12 @@ Windows.
       generator card (per-type count sliders, live total length), Generate / Copy / Save.
     - Vault — searchable table (live debounced search, decrypt-once cache),
       reveal / copy / delete per row.
-- [ ] Step 5: Rule-based strength scorer (Phase 1 AI) — next.
+- [x] Step 5: Rule-based strength scorer (Phase 1 AI) — complete.
+  - `ai/strength.py`: entropy-based scorer (length × log2(pool)) with capping
+    penalties (too-short → Weak, single-type → Medium) and a Weak/Medium/Strong
+    label + reason hint. No ML — hand-written rules, the Phase 2 baseline.
+  - `test_strength.py`: 9 passing checks incl. regressions (single-type cap must
+    not raise a weak password; must lower a long single-type one).
+  - GUI: live colour-coded strength badge in the Add New Entry tab; removed the
+    lowercase slider's minimum=1 floor so single-type generation scores correctly.
+- [ ] Step 6: ML strength classifier (scikit-learn, Phase 2 AI) — next.
