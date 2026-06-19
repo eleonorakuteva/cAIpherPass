@@ -15,6 +15,7 @@ from core.encryption import (
     encrypt_password, decrypt_password
 )
 from core.generator import generate_password, generate_password_with_counts
+from ai.strength import score_password
 from database.database import (
     init_db, has_verification_hash, save_verification_hash,
     get_verification_credentials, get_salt, create_entry,
@@ -340,6 +341,16 @@ class MainApp:
         )
         self.copy_button.pack(side="left", padx=(8, 0))
 
+        # Live strength badge — updates as the user types or generates. Shows the
+        # rule-based label (Weak/Medium/Strong) plus the scorer's reason hint,
+        # coloured red/orange/green. Empty until there's a password to score.
+        self.strength_label = ctk.CTkLabel(
+            left_frame, text="", font=("Helvetica", 12), anchor="w"
+        )
+        self.strength_label.pack(fill="x", pady=(0, 10))
+        # Re-score whenever the password field changes (typing or pasting).
+        self.password_display.bind("<KeyRelease>", lambda e: self._update_strength_badge())
+
         # Tags (optional)
         tags_label = ctk.CTkLabel(
             left_frame, text="Tags (optional)", font=("Helvetica", 12), text_color="#cccccc"
@@ -406,8 +417,10 @@ class MainApp:
 
         # Build one count slider per character type. Each returns its slider so
         # we can read the value later. Defaults sum to 16 (8+4+2+2).
-        # Lowercase has a minimum of 1 so the total length is never zero.
-        self.lowercase_slider = self._make_count_slider(card_body, "Lowercase (a-z)", 8, minimum=1)
+        # All sliders can go to 0 so the user can build a single-type password
+        # (e.g. digits only). The generator rejects an all-zero request, so we
+        # don't need a per-slider minimum to keep the length non-zero.
+        self.lowercase_slider = self._make_count_slider(card_body, "Lowercase (a-z)", 8)
         self.uppercase_slider = self._make_count_slider(card_body, "Uppercase (A-Z)", 4)
         self.digits_slider = self._make_count_slider(card_body, "Digits (0-9)", 2)
         self.symbols_slider = self._make_count_slider(card_body, "Symbols (!@#$%^&*)", 2)
@@ -775,6 +788,7 @@ class MainApp:
             self.username_entry.delete(0, "end")
             self.tags_entry.delete(0, "end")
             self._set_password_text("")
+            self._update_strength_badge()  # clears the badge too
         except sqlite3.IntegrityError:
             # UNIQUE(service_name, username) was violated.
             self._show_save_status(
@@ -793,8 +807,28 @@ class MainApp:
                 symbols=int(self.symbols_slider.get()),
             )
             self._set_password_text(password)
+            self._update_strength_badge()
         except Exception as e:
             self._set_password_text(f"Error: {str(e)}")
+
+    def _update_strength_badge(self):
+        """Score the current password and update the coloured strength badge.
+
+        Reads the password field, runs the rule-based scorer, and shows the
+        label + reason in the matching colour. Cleared when the field is empty.
+        """
+        password = self.password_display.get()
+        if not password or password.startswith("Error"):
+            self.strength_label.configure(text="")
+            return
+
+        result = score_password(password)
+        # Map each label to a colour: red (weak) / orange (medium) / green (strong).
+        colors = {"Weak": "#ff6b6b", "Medium": "#ffa94d", "Strong": "#4CAF50"}
+        self.strength_label.configure(
+            text=f"{result['label']} — {result['reason']}",
+            text_color=colors.get(result["label"], "#cccccc"),
+        )
 
     def _copy_password(self):
         """Copy the generated password to clipboard."""
