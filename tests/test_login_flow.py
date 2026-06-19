@@ -5,8 +5,8 @@ import shutil
 from pathlib import Path
 import io
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add the repo root (parent of tests/) to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Set stdout to UTF-8 for proper Unicode support on Windows
 if sys.platform == "win32":

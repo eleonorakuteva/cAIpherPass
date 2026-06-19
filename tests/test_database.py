@@ -3,11 +3,11 @@
 import sys
 from pathlib import Path
 
-# Add database folder to path so we can import modules
-sys.path.insert(0, str(Path(__file__).parent / "database"))
+# Add the repo root (parent of tests/) to path so we can import the database package.
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from database import init_db, create_entry, read_all_entries, update_entry, delete_entry, get_salt
-from schemas import VaultEntry
+from database.database import init_db, create_entry, read_all_entries, update_entry, delete_entry, get_salt
+from database.schemas import VaultEntry
 
 print("=" * 70)
 print("Testing cAIpherPass Database Validation Layer")

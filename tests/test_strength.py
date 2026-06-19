@@ -3,8 +3,8 @@
 import sys
 from pathlib import Path
 
-# Add project root to path so we can import the ai package.
-sys.path.insert(0, str(Path(__file__).parent))
+# Add the repo root (parent of tests/) to path so we can import the ai package.
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ai.strength import score_password, calculate_entropy
 

@@ -20,7 +20,7 @@ Created comprehensive test suite that simulates user interactions with the Login
 
 ## Test Results
 
-### Test 1: Core Functionality (test_login_flow.py)
+### Test 1: Core Functionality (tests/test_login_flow.py)
 ```
 ✅ Database initialization works
 ✅ First-time setup detection works
@@ -31,7 +31,7 @@ Created comprehensive test suite that simulates user interactions with the Login
 ✅ Edge cases handled correctly (empty password, whitespace)
 ```
 
-### Test 2: GUI Components (test_gui.py)
+### Test 2: GUI Components (tests/test_gui.py)
 
 #### First-Time Setup Flow
 ```
