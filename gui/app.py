@@ -10,12 +10,14 @@ import customtkinter as ctk
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.encryption import (
-    create_password_hash, verify_password, derive_key, encrypt_password
+    create_password_hash, verify_password, derive_key,
+    encrypt_password, decrypt_password
 )
 from core.generator import generate_password, generate_password_with_counts
 from database.database import (
     init_db, has_verification_hash, save_verification_hash,
-    get_verification_credentials, get_salt, create_entry
+    get_verification_credentials, get_salt, create_entry,
+    read_all_entries, delete_entry
 )
 
 
@@ -223,17 +225,12 @@ class MainApp:
         tabview = ctk.CTkTabview(self.root, fg_color="transparent")
         tabview.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Add three tabs
+        # Add the two tabs (search now lives inside the Vault tab).
         tabview.add("Generate Password")
-        tabview.add("View Saved Entries")
-        tabview.add("Search")
+        tabview.add("Vault")
 
-        # Set up the Generate Password tab
         self._setup_generate_tab(tabview.tab("Generate Password"))
-
-        # Set up placeholder tabs
-        self._setup_view_tab(tabview.tab("View Saved Entries"))
-        self._setup_search_tab(tabview.tab("Search"))
+        self._setup_view_tab(tabview.tab("Vault"))
 
     def _setup_generate_tab(self, tab):
         """Build the Generate Password tab.
@@ -438,24 +435,236 @@ class MainApp:
         return slider
 
     def _setup_view_tab(self, tab):
-        """Placeholder for View Saved Entries tab."""
-        label = ctk.CTkLabel(
-            tab,
-            text="View Saved Entries\n\n(Coming soon)",
-            font=("Helvetica", 16),
-            text_color="#cccccc"
-        )
-        label.pack(expand=True, anchor="center")
+        """Build the View Saved Entries tab: search row on top, table below.
 
-    def _setup_search_tab(self, tab):
-        """Placeholder for Search tab."""
-        label = ctk.CTkLabel(
-            tab,
-            text="Search\n\n(Coming soon)",
-            font=("Helvetica", 16),
-            text_color="#cccccc"
+        The search box filters the same table — there is no separate Search tab.
+        The list lives in a CTkScrollableFrame (`self.view_list`); `_load_entries`
+        (re)fills it, honouring whatever is currently typed in the search box.
+        """
+        container = ctk.CTkFrame(tab, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # Header row: title on the left, Refresh button on the right.
+        header = ctk.CTkFrame(container, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 10))
+
+        title = ctk.CTkLabel(
+            header, text="Vault",
+            font=("Helvetica", 18, "bold"), text_color="#ffffff"
         )
-        label.pack(expand=True, anchor="center")
+        title.pack(side="left")
+
+        refresh_button = ctk.CTkButton(
+            header, text="Refresh", command=self._clear_search,
+            font=("Helvetica", 12), width=90, height=32,
+            fg_color="#2196F3", hover_color="#0b7dda"
+        )
+        refresh_button.pack(side="right")
+
+        # Search row: live-filters the table by service / username / tag.
+        search_row = ctk.CTkFrame(container, fg_color="transparent")
+        search_row.pack(fill="x", pady=(0, 2))
+
+        self.view_search_entry = ctk.CTkEntry(
+            search_row,
+            placeholder_text="Search by service, username, or tag (not passwords)…",
+            font=("Helvetica", 14), height=40,
+        )
+        self.view_search_entry.pack(side="left", fill="x", expand=True, pady=(0, 10))
+        # Live search: re-filter as the user types (no button needed). Debounced
+        # so a fast typist doesn't trigger a re-render on every single keystroke.
+        self._search_job = None
+        self.view_search_entry.bind("<KeyRelease>", self._on_search_changed)
+
+        # Scrollable area that holds one row per saved entry.
+        self.view_list = ctk.CTkScrollableFrame(container, fg_color="transparent")
+        self.view_list.pack(fill="both", expand=True)
+
+        # Load + decrypt once into the cache, then render.
+        self._load_entries()
+
+    def _load_entries(self):
+        """Read + decrypt every entry ONCE into a cache, then render.
+
+        Decryption (PBKDF2 + Fernet) is the slow part, so we do it here — on
+        load, delete, or refresh — never on each keystroke. Live search then
+        filters this cache in memory. Re-run this whenever the vault changes.
+        """
+        key = derive_key(self.master_password, get_salt())
+        self.view_cache = []
+        for entry in read_all_entries():
+            try:
+                plaintext = decrypt_password(entry["encrypted_password"], key)
+            except Exception:
+                plaintext = "<decryption failed>"
+            self.view_cache.append({
+                "id": entry["id"],
+                "service_name": entry["service_name"],
+                "username": entry["username"],
+                "tags": entry["tags"],
+                "password": plaintext,
+            })
+        self._apply_filter()
+
+    def _on_search_changed(self, event=None):
+        """Debounce keystrokes: re-filter 150 ms after the user stops typing."""
+        if self._search_job is not None:
+            self.root.after_cancel(self._search_job)
+        self._search_job = self.root.after(150, self._apply_filter)
+
+    def _apply_filter(self):
+        """Filter/reorder the cached entries by the search box (no DB, no crypto).
+
+        Matches float to the top (stable sort); nothing is hidden. Matching is
+        done in memory on service / username / tags — same fields the DB search
+        used, but without a round-trip on every keystroke.
+        """
+        self._search_job = None
+        query = self.view_search_entry.get().strip().lower()
+        entries = self.view_cache
+
+        match_ids = set()
+        if query:
+            match_ids = {
+                e["id"] for e in entries
+                if query in e["service_name"].lower()
+                or query in e["username"].lower()
+                or query in (e["tags"] or "").lower()
+            }
+            # Stable sort: matches (key False=0) lead, the rest follow.
+            entries = sorted(entries, key=lambda e: e["id"] not in match_ids)
+
+        self._render_entries_table(
+            self.view_list, entries,
+            empty_text="No saved entries yet.", highlight_ids=match_ids,
+        )
+
+    def _clear_search(self):
+        """Clear the search box and reload all entries (the Refresh button)."""
+        self.view_search_entry.delete(0, "end")
+        self._load_entries()
+
+    def _render_entries_table(self, parent, entries, empty_text="No entries.",
+                              highlight_ids=None):
+        """Render vault rows as a 4-column table inside `parent` (scrollable).
+
+        Columns: Service | Username/Email | Password (masked) | Actions.
+        Built with .grid(); the password column stretches to fill the width.
+        Rows whose id is in `highlight_ids` get a subtle green tint (search hits).
+        """
+        highlight_ids = highlight_ids or set()
+        # Clear any previously rendered widgets so re-running starts clean.
+        for child in parent.winfo_children():
+            child.destroy()
+
+        if not entries:
+            ctk.CTkLabel(
+                parent, text=empty_text,
+                font=("Helvetica", 13), text_color="#cccccc"
+            ).grid(row=0, column=0, pady=20, sticky="w")
+            return
+
+        # Column 3 (password) absorbs extra width; the rest stay snug.
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_columnconfigure(1, weight=1)
+        parent.grid_columnconfigure(2, weight=1)
+        parent.grid_columnconfigure(3, weight=2)
+        parent.grid_columnconfigure(4, weight=0)
+
+        # Header row.
+        headers = ["Service", "Tags", "Username/Email", "Password", "Actions"]
+        for col, text in enumerate(headers):
+            ctk.CTkLabel(
+                parent, text=text,
+                font=("Helvetica", 12, "bold"), text_color="#9b9b9b"
+            ).grid(row=0, column=col, sticky="w", padx=8, pady=(0, 6))
+
+        for i, entry in enumerate(entries, start=1):
+            # Matched rows get a subtle green tint; others stay transparent.
+            tint = "#1f3322" if entry["id"] in highlight_ids else "transparent"
+
+            ctk.CTkLabel(
+                parent, text=entry["service_name"], fg_color=tint,
+                font=("Helvetica", 13), text_color="#ffffff", anchor="w"
+            ).grid(row=i, column=0, sticky="ew", padx=8, pady=4)
+
+            # Tags are optional; show a muted dash when there are none.
+            ctk.CTkLabel(
+                parent, text=entry.get("tags") or "—", fg_color=tint,
+                font=("Helvetica", 13), text_color="#cccccc", anchor="w"
+            ).grid(row=i, column=1, sticky="ew", padx=8, pady=4)
+
+            ctk.CTkLabel(
+                parent, text=entry["username"], fg_color=tint,
+                font=("Helvetica", 13), text_color="#ffffff", anchor="w"
+            ).grid(row=i, column=2, sticky="ew", padx=8, pady=4)
+
+            # Password was already decrypted into the cache (see _load_entries).
+            plaintext = entry["password"]
+
+            pw_field = ctk.CTkEntry(parent, font=("Helvetica", 13), height=34, show="•")
+            pw_field.insert(0, plaintext)
+            pw_field.configure(state="readonly")  # visible & copyable, not editable
+            pw_field.grid(row=i, column=3, sticky="ew", padx=8, pady=4)
+
+            # Actions cell: Show / Copy / Delete packed into one sub-frame.
+            actions = ctk.CTkFrame(parent, fg_color=tint)
+            actions.grid(row=i, column=4, sticky="ew", padx=8, pady=4)
+
+            # Icon buttons: 👁 toggle reveal, 📋 copy, 🗑 delete.
+            show_btn = ctk.CTkButton(
+                actions, text="👁", width=40, height=34, font=("Helvetica", 15),
+                fg_color="#555555", hover_color="#666666"
+            )
+            show_btn.configure(
+                command=lambda f=pw_field, b=show_btn: self._toggle_reveal(
+                    f, b, show_label="👁", hide_label="🙈"
+                )
+            )
+            show_btn.pack(side="left")
+
+            copy_btn = ctk.CTkButton(
+                actions, text="📋", width=40, height=34, font=("Helvetica", 15),
+                fg_color="#2196F3", hover_color="#0b7dda"
+            )
+            copy_btn.configure(command=lambda p=plaintext, b=copy_btn: self._copy_text(p, b))
+            copy_btn.pack(side="left", padx=(6, 0))
+
+            del_btn = ctk.CTkButton(
+                actions, text="🗑", width=40, height=34, font=("Helvetica", 15),
+                fg_color="#c0392b", hover_color="#a93226"
+            )
+            del_btn.configure(command=lambda eid=entry["id"]: self._delete_entry(eid))
+            del_btn.pack(side="left", padx=(6, 0))
+
+    def _toggle_reveal(self, pw_field, show_btn, show_label="Show", hide_label="Hide"):
+        """Flip a password field between masked and plaintext.
+
+        `show_label`/`hide_label` let callers use icons (👁/🙈) or text
+        ("Show"/"Hide") for the toggle button without changing this logic.
+        """
+        if pw_field.cget("show") == "":
+            pw_field.configure(show="•")
+            show_btn.configure(text=show_label)
+        else:
+            pw_field.configure(show="")
+            show_btn.configure(text=hide_label)
+
+    def _copy_text(self, text, button):
+        """Copy arbitrary text to the clipboard with brief button feedback."""
+        if not text or text.startswith("<"):
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        original = button.cget("text")
+        button.configure(text="✓")
+        self.root.after(1500, lambda: button.configure(text=original))
+
+    def _delete_entry(self, entry_id):
+        """Delete an entry from the vault, then refresh the table."""
+        delete_entry(entry_id)
+        # Re-render so the deleted row disappears, keeping any active search.
+        self._load_entries()
 
     def _on_count_change(self, value, value_label):
         """Update one slider's count label, then refresh the running total."""
