@@ -11,6 +11,17 @@ DIGITS = string.digits               # "0123456789"
 SYMBOLS = "!@#$%^&*"                 # our chosen set of special characters
 
 
+def _secure_shuffle(items):
+    """Shuffle a list in place using `secrets` (secure Fisher-Yates).
+
+    Used by both generators, so it lives here as the single source of truth —
+    never `random.shuffle`, which is not cryptographically secure.
+    """
+    for i in range(len(items) - 1, 0, -1):
+        j = secrets.randbelow(i + 1)
+        items[i], items[j] = items[j], items[i]
+
+
 def generate_password(length=16, use_uppercase=True, use_digits=True, use_symbols=True):
     """Generate a secure password from the selected character types.
 
@@ -45,20 +56,10 @@ def generate_password(length=16, use_uppercase=True, use_digits=True, use_symbol
         password_chars.append(secrets.choice(all_characters))
 
     # Part 3 — shuffle so the guaranteed characters aren't always at the front.
-    # Secure Fisher-Yates shuffle using secrets (never random.shuffle).
-    for i in range(len(password_chars) - 1, 0, -1):
-        j = secrets.randbelow(i + 1)
-        password_chars[i], password_chars[j] = password_chars[j], password_chars[i]
+    _secure_shuffle(password_chars)
 
     # Join the list of characters into the final password string.
     return "".join(password_chars)
-
-
-def _secure_shuffle(items):
-    """Shuffle a list in place using `secrets` (secure Fisher-Yates)."""
-    for i in range(len(items) - 1, 0, -1):
-        j = secrets.randbelow(i + 1)
-        items[i], items[j] = items[j], items[i]
 
 
 def generate_password_with_counts(lowercase=0, uppercase=0, digits=0, symbols=0):
